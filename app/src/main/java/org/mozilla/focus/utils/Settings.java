@@ -26,6 +26,7 @@ public class Settings {
     private static Settings instance;
     private static final boolean BLOCK_IMAGE_DEFAULT = false;
     private static final boolean TURBO_MODE_DEFAULT = true;
+    private static final boolean SCREENSHOT_ON_BOARDING_DEFAULT = true;
 
     public synchronized static Settings getInstance(Context context) {
         if (instance == null) {
@@ -92,6 +93,19 @@ public class Settings {
         final String key = getPreferenceKey(R.string.pref_key_showed_storage_message);
         preferences.edit()
                 .putInt(key, type)
+                .apply();
+    }
+
+    public boolean shouldShowScreenshotOnBoarding(){
+        return preferences.getBoolean(
+                resources.getString(R.string.pref_key_screenshot_on_boarding),
+                SCREENSHOT_ON_BOARDING_DEFAULT);
+    }
+
+    public void setScreenshotOnBoardingDone(){
+        final String key = getPreferenceKey(R.string.pref_key_screenshot_on_boarding);
+        preferences.edit()
+                .putBoolean(key, false)
                 .apply();
     }
 
