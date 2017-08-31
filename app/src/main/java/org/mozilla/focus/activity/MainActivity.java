@@ -12,6 +12,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -36,6 +37,7 @@ import org.mozilla.focus.fragment.ListPanelDialog;
 import org.mozilla.focus.fragment.ScreenCaptureDialogFragment;
 import org.mozilla.focus.home.HomeFragment;
 import org.mozilla.focus.locale.LocaleAwareAppCompatActivity;
+import org.mozilla.focus.screenshot.ScreenshotCaptureTask;
 import org.mozilla.focus.telemetry.TelemetryWrapper;
 import org.mozilla.focus.urlinput.UrlInputFragment;
 import org.mozilla.focus.utils.Constants;
@@ -51,7 +53,6 @@ import org.mozilla.focus.web.WebViewProvider;
 import org.mozilla.focus.widget.FragmentListener;
 
 import java.io.File;
-import java.lang.ref.WeakReference;
 
 import static org.mozilla.focus.screenshot.ScreenshotViewerActivity.REQ_CODE_NOTIFY_SCREENSHOT_DELETE;
 
@@ -421,44 +422,48 @@ public class MainActivity extends LocaleAwareAppCompatActivity implements Fragme
         // For turbo mode, a automatic refresh is done when we disable block image.
     }
 
-    private static final class CaptureRunnable implements Runnable {
-        private final WeakReference<BrowserFragment> browserFragmentWeakReference;
-        private final WeakReference<ScreenCaptureDialogFragment> screenCaptureDialogFragmentWeakReference;
-        private final WeakReference<View> containerWeakReference;
-
-        public CaptureRunnable(BrowserFragment browserFragment, ScreenCaptureDialogFragment screenCaptureDialogFragment, View container) {
-            browserFragmentWeakReference = new WeakReference<>(browserFragment);
-            screenCaptureDialogFragmentWeakReference = new WeakReference<>(screenCaptureDialogFragment);
-            containerWeakReference = new WeakReference<>(container);
-        }
-
-        @Override
-        public void run() {
-            BrowserFragment browserFragment = browserFragmentWeakReference.get();
-            ScreenCaptureDialogFragment screenCaptureDialogFragment = screenCaptureDialogFragmentWeakReference.get();
-            View view = containerWeakReference.get();
-            int captureResultResource = R.string.screenshot_failed;
-            if (browserFragment != null && browserFragment.capturePage()) {
-                captureResultResource = R.string.screenshot_saved;
-            }
-            if (screenCaptureDialogFragment != null) {
-                screenCaptureDialogFragment.dismiss();
-            }
-            if (view != null) {
-                Snackbar.make(view, captureResultResource, Snackbar.LENGTH_SHORT).show();
-            }
-        }
-    }
-
     private void showLoadingAndCapture(final BrowserFragment browserFragment) {
         if (!safeForFragmentTransactions) {
             return;
         }
         final ScreenCaptureDialogFragment capturingFragment = ScreenCaptureDialogFragment.newInstance();
         capturingFragment.show(getSupportFragmentManager(), "capturingFragment");
-        final int WAIT_INTERVAL = 50;
+
+        final Runnable delayedRunnable = new Runnable() {
+            @Override
+            public void run() {
+                final BrowserFragment.ScreenshotCallback callback = new BrowserFragment.ScreenshotCallback() {
+                    @Override
+                    public void onCaptureComplete(String title, String url, Bitmap bitmap) {
+                        new ScreenshotCaptureTask(MainActivity.this) {
+                            @Override
+                            protected void onPreExecute() {
+                                capturingFragment.start();
+                            }
+
+                            @Override
+                            protected void onPostExecute(String path) {
+                                final int captureResultResource;
+                                if (TextUtils.isEmpty(path)) {
+                                    capturingFragment.dismiss();
+                                    captureResultResource = R.string.screenshot_failed;
+                                } else {
+                                    capturingFragment.dismiss(true);
+                                    captureResultResource = R.string.screenshot_saved;
+                                }
+
+                                Snackbar.make(findViewById(R.id.container), captureResultResource, Snackbar.LENGTH_SHORT).show();
+                            }
+                        }.execute(title, url, bitmap);
+                    }
+                };
+                browserFragment.capturePage(callback);
+            }
+        };
+
+        final int WAIT_INTERVAL = 150;
         // Post delay to wait for Dialog to show
-        HANDLER.postDelayed(new CaptureRunnable(browserFragment, capturingFragment, findViewById(R.id.container)), WAIT_INTERVAL);
+        HANDLER.postDelayed(delayedRunnable, WAIT_INTERVAL);
     }
 
 
